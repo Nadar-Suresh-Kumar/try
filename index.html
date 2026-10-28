@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Billboard size finder</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+canvas{display:block;position:fixed;left:0;top:0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const STEPS = [10, 20, 50, 100, 200, 500];
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+  cv.width = W; cv.height = H;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+
+  // grid cell size adapts to the screen (small LED boards get a finer grid)
+  let step = 10;
+  STEPS.forEach(s => { if (s <= Math.min(W, H) / 6) step = s; });
+  const every = Math.max(100, step);
+
+  // coloured cells
+  for (let c = 0; c * step < W; c++) {
+    for (let r = 0; r * step < H; r++) {
+      ctx.fillStyle = 'hsl(' + ((c * 47) % 360) + ' 65% ' + (r % 2 ? '30%' : '20%') + ')';
+      ctx.fillRect(c * step, r * step, step, step);
+    }
+  }
+
+  // grid lines
+  for (let x = 0; x <= W; x += step) {
+    ctx.fillStyle = x % every === 0 ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.15)';
+    ctx.fillRect(x, 0, 1, H);
+  }
+  for (let y = 0; y <= H; y += step) {
+    ctx.fillStyle = y % every === 0 ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.15)';
+    ctx.fillRect(0, y, W, 1);
+  }
+
+  // numbered edges: top = x position in pixels, left = y position in pixels
+  const fs = Math.round(Math.max(9, Math.min(14 * dpr, Math.min(W, H) / 18)));
+  ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
+  ctx.textBaseline = 'top';
+  function chip(t, x, y, align) {
+    ctx.textAlign = align;
+    const w = ctx.measureText(t).width + 6;
+    const left = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+    ctx.fillStyle = '#000'; ctx.fillRect(left, y, w, fs + 4);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(t, align === 'right' ? x - 3 : align === 'center' ? x : x + 3, y + 2);
+  }
+  for (let x = every; x < W; x += every) chip(String(x), x, 0, 'right');
+  for (let y = every; y < H; y += every) chip(String(y), 0, y - fs - 4, 'left');
+
+  // white border = the real edge of the visible area
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, 2); ctx.fillRect(0, H - 2, W, 2);
+  ctx.fillRect(0, 0, 2, H); ctx.fillRect(W - 2, 0, 2, H);
+
+  // corner squares: red top-left, green top-right, blue bottom-left, yellow bottom-right
+  // if one is cut off, the billboard is cropping the picture
+  const cs = Math.max(6, Math.round(Math.min(W, H) / 12));
+  ctx.fillStyle = '#ff2d2d'; ctx.fillRect(0, 0, cs, cs);
+  ctx.fillStyle = '#2dff4a'; ctx.fillRect(W - cs, 0, cs, cs);
+  ctx.fillStyle = '#2d6bff'; ctx.fillRect(0, H - cs, cs, cs);
+  ctx.fillStyle = '#ffe82d'; ctx.fillRect(W - cs, H - cs, cs, cs);
+
+  // exact size readout in the middle
+  const g = gcd(W, H), rw = W / g, rh = H / g;
+  const ratio = (rw <= 40 && rh <= 40) ? rw + ':' + rh : (W / H).toFixed(2) + ':1';
+  const shape = W === H ? 'Square, ratio 1:1' : (W > H ? 'Wide, ratio ' : 'Tall, ratio ') + ratio;
+  const big = Math.max(10, Math.floor(Math.min(W * 0.085, H * 0.2)));
+  const lines = [[W + ' × ' + H + ' px', big, '#fff'],
+                 [shape, Math.max(8, big * 0.38), '#7dffb0']];
+  if (H >= 100) lines.push(['Inspect size: ' + innerWidth + ' × ' + innerHeight + ', pixel ratio ' + dpr + ', grid ' + step + ' px', Math.max(8, big * 0.28), '#bbb']);
+
+  let boxW = 0, boxH = 0;
+  lines.forEach(l => {
+    ctx.font = 'bold ' + l[1] + 'px system-ui, sans-serif';
+    boxW = Math.max(boxW, ctx.measureText(l[0]).width);
+    boxH += l[1] * 1.3;
+  });
+  const pad = big * 0.3, bx = (W - boxW) / 2 - pad, by = (H - boxH) / 2 - pad;
+  ctx.fillStyle = '#000'; ctx.fillRect(bx, by, boxW + pad * 2, boxH + pad * 2);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(bx, by, boxW + pad * 2, boxH + pad * 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let y = by + pad;
+  lines.forEach(l => {
+    ctx.font = 'bold ' + l[1] + 'px system-ui, sans-serif';
+    ctx.fillStyle = l[2];
+    ctx.fillText(l[0], W / 2, y + l[1] * 0.65);
+    y += l[1] * 1.3;
+  });
+}
+
+cv.onclick = function () {
+  try {
+    const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+    if (p && p.catch) p.catch(function () {});
+  } catch (e) {}
+};
+addEventListener('resize', draw);
+draw();
+</script>
+</body>
+</html>
